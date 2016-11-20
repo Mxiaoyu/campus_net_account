@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
+
+import urllib
+import urllib2
+import re
+import json
+import logging
+import pypinyin
+
+
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.DEBUG)
+
+
+class Users(object):
+    '''retrieve the list of users'''
+
+    def __init__(self):
+        '''
+        flag: 0, teachers; 1, students;
+        '''
+        self.url = 'http://www.xxx.cn/site/78?p=#'
+        self.login_url = 'http://xxx/eportal/InterFace.do?method=login'
+        self.logout_url = 'http://xxx/eportal/InterFace.do?method=logout'
+		
+    def __get_content(self):
+        content = urllib.urlopen(self.url).read()
+        return content
+
+    def __parase_content(self):
+        content = self.__get_content()
+        pattern = re.compile(r'<a\s*target="_blank"\s*fullName="(.*?)".*?')
+
+        #从网页复制过来的字符串，修改然后compile，对于下载下来的字符串不能匹配，而如果是通过手写的，就可以匹配
+        users = re.findall(pattern, content)
+        return users
+
+    def __parse_users(self):
+        pinyin_users = []
+        for chi_user in self.__parase_content():
+            pinyin_users.append(''.join(pypinyin.lazy_pinyin(chi_user.decode('utf-8'))))
+
+        return pinyin_users
+
+    def __valid_user(self, user):
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Language': 'zh-CN,zh;q=0.8'
+        }
+        logout_form = {}
+        
+        login_form = {
+            'password': 'xxx',
+            'queryString': 'wlanuserip%3D0bc386d9e643d188b011a0d00c9b5c40%26wlanacname%3D5fcbc245a7ffdfa4%26ssid%3D%26nasip%3D2c0716b583c8ac3cbd7567a84cfde5a8%26mac%3D53ba540bde596b811a6d5617a86fa028%26t%3Dwireless-v2%26url%3D2c0328164651e2b4f13b933ddf36628bea622dedcc302b30',
+            'service': '',
+            'operatorPwd': '',
+            'validcode': ''
+        }        
+
+        request = urllib2.Request(self.login_url, headers=headers)
+        logout_request = urllib2.Request(self.logout_url, headers=headers)
+
+        login_form['userId'] = user
+        try:
+            data = urllib.urlencode(login_form)
+        except:
+            logging.error('urlencode error%s', str(login_form))
+            return False
+        request.add_data(data)
+        response = urllib2.urlopen(request)
+        result = response.read()
+        j_result = json.loads(result)
+        if j_result['result'] == 'success':
+            logging.info('%s: %s', user, result)
+            logout_form['userIndex'] = j_result['userIndex']
+            logout_data = urllib.urlencode(logout_form)
+            logout_request.add_data(logout_data)
+            logout_response = urllib2.urlopen(logout_request)
+            logging.info('logout:%s', logout_response.read())
+            response.close()
+            logout_response.close()
+            return True
+        response.close()
+
+    def get_users(self):
+        users = self.__parse_users()
+        with open('valid_user.txt', 'w+') as f:
+            for user in users:
+                if self.__valid_user(user):
+                    f.write(user+'\n')
+            
+
+
+if __name__ == '__main__':
+    users = Users()
+    users.get_users()
